@@ -1,0 +1,26 @@
+{
+  "name": "香港裝修師傅大本營。打卡機",
+  "short_name": "打卡機",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#142444",
+  "theme_color": "#142444",
+  "icons": [
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}
