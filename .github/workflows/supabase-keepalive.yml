@@ -1,0 +1,84 @@
+name: Supabase Keep-Alive Heartbeat (RenoCamp Card)
+
+on:
+  schedule:
+    # 每 3 日香港時間早上 10:00 (UTC 02:00) 自動執行一次，徹底防止 7 日無活動自動休眠
+    - cron: '0 2 */3 * *'
+  # 支援隨時喺 GitHub Actions 頁面手動按 "Run workflow" 即時測試
+  workflow_dispatch:
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping & Heartbeat Supabase Database
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "❌ 缺少 SUPABASE_URL 或 SUPABASE_ANON_KEY，請喺 Repository Secrets 補齊。"
+            exit 1
+          fi
+
+          BASE_URL="${SUPABASE_URL%/}"
+          NOW_UTC="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+
+          AUTH_ARGS=(-H "apikey: ${SUPABASE_ANON_KEY}")
+          if [[ "$SUPABASE_ANON_KEY" == eyJ* ]]; then
+            AUTH_ARGS+=(-H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
+          fi
+
+          # 1) 執行輕量讀取測試 (確認資料庫已啟動且可正常查詢)
+          READ_STATUS=$(curl -sS -o /tmp/sb_read.json -w "%{http_code}" \
+            "${AUTH_ARGS[@]}" \
+            "${BASE_URL}/rest/v1/app_announcements?select=id&limit=1")
+
+          echo "READ HTTP status: ${READ_STATUS}"
+          if [ "$READ_STATUS" -lt 200 ] || [ "$READ_STATUS" -ge 300 ]; then
+            cat /tmp/sb_read.json || true
+            echo "❌ 讀取 Supabase 失敗 (HTTP ${READ_STATUS})，請檢查專案是否仍處於 Paused 狀態或 Key 是否正確。"
+            exit 1
+          fi
+
+          # 2) 寫入一筆隱藏保活心跳 (active: false，唔會顯示喺打卡機畫面，但可確保重置 7 日計時器)
+          PAYLOAD=$(cat <<EOF
+          {
+            "id": "SYS_HEARTBEAT_KEEPALIVE",
+            "badge": "SYS_HEARTBEAT",
+            "title": "GITHUB_ACTIONS_KEEPALIVE",
+            "body": "Automated heartbeat at ${NOW_UTC}",
+            "target_url": "",
+            "cta_text": "",
+            "active": false,
+            "raw_json": {
+              "id": "SYS_HEARTBEAT_KEEPALIVE",
+              "badge": "SYS_HEARTBEAT",
+              "title": "GITHUB_ACTIONS_KEEPALIVE",
+              "body": "Automated heartbeat at ${NOW_UTC}",
+              "url": "",
+              "ctaText": "",
+              "active": false
+            }
+          }
+          EOF
+          )
+
+          WRITE_STATUS=$(curl -sS -o /tmp/sb_write.json -w "%{http_code}" \
+            -X POST \
+            "${AUTH_ARGS[@]}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: resolution=merge-duplicates" \
+            -d "$PAYLOAD" \
+            "${BASE_URL}/rest/v1/app_announcements")
+
+          echo "WRITE HTTP status: ${WRITE_STATUS}"
+          if [ "$WRITE_STATUS" -lt 200 ] || [ "$WRITE_STATUS" -ge 300 ]; then
+            cat /tmp/sb_write.json || true
+            echo "❌ 寫入心跳紀錄失敗 (HTTP ${WRITE_STATUS})。"
+            exit 1
+          fi
+
+          echo "✅ Supabase 保活心跳成功 (${NOW_UTC})！"
